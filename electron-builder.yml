@@ -1,0 +1,40 @@
+# Packages the Electron shell so it can be copied into an existing Účto folder
+# (e.g. C:\UCTO2026\ucto-electron\). The app finds the installation by walking up
+# from its executable; see src/main/index.ts findAppDir().
+appId: cz.ucto.fand-electron
+productName: ucto
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - resources/**
+extraResources: []
+win:
+  target: [dir, portable, nsis]
+  artifactName: ucto-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  target: [dir, zip]
+  category: public.app-category.finance
+  # Bundled Mono for the original .NET helpers (scripts/mono/build-macos.sh,
+  # docs/MONO-RUNTIME.md). Lands in Contents/Resources/mono. Contents are x86_64 for
+  # every arch (Rosetta 2 on Apple Silicon).
+  extraResources:
+    - from: resources/mono/darwin-${arch}
+      to: mono
+      filter: ["**/*"]
+linux:
+  target: [dir, AppImage, tar.gz]
+  category: Office
+  # Bundled Mono for the original .NET helpers (scripts/mono/build-linux.sh <x64|arm64>,
+  # docs/MONO-RUNTIME.md). Lands in <resources>/mono; only the target arch is copied.
+  extraResources:
+    - from: resources/mono/linux-${arch}
+      to: mono
+      filter: ["**/*"]

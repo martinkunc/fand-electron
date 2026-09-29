@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened-runtime entitlements for the bundled Mono (Contents/Resources/mono/bin/mono)
+     and, through electron-builder's entitlementsInherit, every other nested binary.
+     See docs/MONO-RUNTIME.md "macOS signing and notarization". -->
+<plist version="1.0">
+<dict>
+  <!-- Mono's JIT maps writable+executable pages (MAP_JIT). -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <!-- Mono 6.12 also emits trampolines/JIT code without MAP_JIT in places. -->
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!-- Mono dlopen()s its P/Invoke libraries (libgdiplus, libmono-native, ...); allow
+       loading them even if they end up signed by another team or ad hoc. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

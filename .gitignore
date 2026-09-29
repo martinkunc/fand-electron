@@ -1,0 +1,20 @@
+node_modules/
+out/
+dist/
+vendor/downloads/
+vendor/extracted/
+work/
+*.log
+vendor/reference/
+shims/mono/**/*.dll
+shims/mono/**/*.exe
+shims/mono/patch/cache/
+
+# built Mono runtime for the .NET helpers (scripts/mono/build-*.sh, docs/MONO-RUNTIME.md)
+resources/mono/
+# Účto's own files (Tichý & spol.), not redistributable
+vendor/docs/Soub2026/
+# local tool and editor state
+.vscode/
+.claude/
+*.tsbuildinfo

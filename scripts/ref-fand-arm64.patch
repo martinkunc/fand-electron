@@ -1,0 +1,128 @@
+diff --git a/pas/COMMONFPC.PAS b/pas/COMMONFPC.PAS
+index f597cab..e5f73d5 100644
+--- a/pas/COMMONFPC.PAS
++++ b/pas/COMMONFPC.PAS
+@@ -12,7 +12,7 @@ begin
+   p:=PPtr(@Frst); n:=0;
+   while p^<>nil do begin
+     nxt := PPtr(p^);
+-    if (PtrUInt(nxt) < $100000) or (PtrUInt(nxt) > $7FFFFFFFFFFF) then break;
++    if (PtrUInt(nxt) < $100000) or (PtrUInt(nxt) > $FFFFFFFFFFFF) then break;
+     p:=nxt;
+     inc(n); if n > 1000000 then break;
+   end;
+diff --git a/pas/HANDLE.PAS b/pas/HANDLE.PAS
+index d695454..cbc1652 100644
+--- a/pas/HANDLE.PAS
++++ b/pas/HANDLE.PAS
+@@ -94,6 +94,29 @@ function TryLockH(Handle:word;Pos:longint;Len:word):boolean;
+ begin TryLockH:=true end;
+ procedure UnLockH(Handle:word;Pos:longint;Len:word);
+ begin end;
++{$ifdef UNIX}
++{ DOS names are case-insensitive: each path component takes the case found on
++  disk (a catalogue's (STAN) directory is (stan)); a missing one is kept as is }
++function CasePath(const P:string):string;
++var i,j:integer; res,comp:string; sr:SysUtils.TSearchRec;
++begin
++  CasePath:=P; if (P='') or FileExists(P) or DirectoryExists(P) then exit;
++  res:=''; i:=1; if P[1]='/' then begin res:='/'; i:=2 end;
++  while i<=length(P) do begin
++    j:=i; while (j<=length(P)) and (P[j]<>'/') do inc(j);
++    comp:=copy(P,i,j-i);
++    if (comp<>'') and (comp<>'.') and (comp<>'..') and
++       not FileExists(res+comp) and not DirectoryExists(res+comp) then begin
++      if SysUtils.FindFirst(res+'*',faAnyFile or faDirectory,sr)=0 then begin
++        repeat
++          if SameText(sr.Name,comp) then begin comp:=sr.Name; break end
++        until SysUtils.FindNext(sr)<>0;
++        SysUtils.FindClose(sr) end end;
++    res:=res+comp; if j<=length(P) then res:=res+'/';
++    i:=j+1 end;
++  CasePath:=res;
++end;
++{$endif}
+ function UnixPath(const S:string):string;
+ var i:integer; r,root,cwd:string;
+ begin
+@@ -114,6 +137,7 @@ begin
+     if (r<>'') and (r[1]='/') then delete(r,1,1);
+     r:=root+r;
+   end;
++  {$ifdef UNIX} r:=CasePath(r); {$endif}
+   UnixPath:=r;
+ end;
+ function OpenH(Mode:FileOpenMode;UM:FileUseMode):word;
+@@ -155,6 +179,10 @@ begin
+         end else HandleError:=0;
+       end;
+   end;
++  {$ifdef UNIX} { ENOENT: DOS tells a missing directory (3) from a missing file }
++  if (HandleError=2) and (ExtractFileDir(path)<>'') and
++     not DirectoryExists(ExtractFileDir(path)) then HandleError:=3;
++  {$endif}
+   if IsNetCVol and (HandleError in [$05,$21]) then begin
+     if w=0 then begin Set2MsgPar(path,Txt[UM]); w:=PushWrLLMsg(825,false) end;
+     LockBeep; KbdTimer(spec.NetDelay,0); goto 1 end;
+@@ -216,12 +244,12 @@ procedure TruncH(handle:word;N:longint);
+ procedure CloseClearH(var h:word);
+   begin if h=$FF then exit; CloseH(h); ClearCacheH(h); h:=$FF end;
+ procedure SetFileAttr(Attr:word);
+-begin HandleError:=0; if SysUtils.FileSetAttr(CPath,Attr)<>0 then HandleError:=1 end;
++begin HandleError:=0; if SysUtils.FileSetAttr(UnixPath(CPath),Attr)<>0 then HandleError:=1 end;
+ function GetFileAttr:word;
+ var r:longint;
+ begin
+   HandleError:=0;
+-  r:=SysUtils.FileGetAttr(CPath);
++  r:=SysUtils.FileGetAttr(UnixPath(CPath));
+   if r<0 then begin HandleError:=1; GetFileAttr:=0 end
+   else GetFileAttr:=word(r);
+ end;
+@@ -268,11 +296,11 @@ begin
+                   (longint(mi) shl 5) or longint(s div 2);
+ end;
+ procedure DeleteFile(path:PathStr);
+-begin HandleError:=0; if not SysUtils.DeleteFile(path) then HandleError:=1 end;
++begin HandleError:=0; if not SysUtils.DeleteFile(UnixPath(path)) then HandleError:=1 end;
+ procedure RenameFile56(OldPath,NewPath:PathStr;Msg:boolean);
+ begin
+   HandleError:=0;
+-  if not SysUtils.RenameFile(OldPath,NewPath) then HandleError:=1;
++  if not SysUtils.RenameFile(UnixPath(OldPath),UnixPath(NewPath)) then HandleError:=1;
+   if Msg and (HandleError<>0) then begin
+     Set2MsgPar(OldPath,NewPath); RunError(829) end;
+ end;
+@@ -287,7 +315,8 @@ var p:PathStr; bin:ansistring;
+   end;
+ begin
+   p:=GetEnv(EnvName);
+-  if p<>'' then begin AddBackSlash(p); MyFExpand:=ExpandFileName(p+Nm); exit end;
++  if p<>'' then begin AddBackSlash(p); bin:=p;
++    if not Has(bin,p) then p:=bin+Nm; MyFExpand:=ExpandFileName(p); exit end;
+   if Has('',p) then begin MyFExpand:=ExpandFileName(p); exit end;
+   bin:=ExtractFilePath(ExpandFileName(ParamStr(0)));
+   if Has(bin,p) then begin MyFExpand:=p; exit end;
+diff --git a/tools/build.sh b/tools/build.sh
+index 4ce6445..0f6fd1b 100755
+--- a/tools/build.sh
++++ b/tools/build.sh
+@@ -3,11 +3,16 @@
+ set -euo pipefail
+ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ cd "$repo_root/pas"
++rm -f FAND   # a failed compile must not leave the old binary
+ fpc -Mtp -B "$@" FAND.PAS | grep -E "Error|Fatal|lines compiled" || true
+ [[ -x FAND ]] || { echo "build.sh: compile failed" >&2; exit 1; }
+ mkdir -p "$repo_root/bin"
+ rm -f "$repo_root/bin/fand"   # a new inode: macOS kills an overwritten signed binary
+ cp FAND "$repo_root/bin/fand"
+ cp "$repo_root/fandres/FAND.RES" "$repo_root/fandcfg/FAND.CFG" "$repo_root/bin/"
+-(cd "$repo_root/examples/hello" && "$repo_root/bin/fand" hello --source-in src </dev/null) \
+-  || { echo "build.sh: examples/hello does not build" >&2; exit 1; }
++# the catalogue keeps paths in 79 chars: build the sample in a short temp dir
++hello_dir="$(mktemp -d /tmp/fandhello.XXXXXX)"
++cp -R "$repo_root/examples/hello/src" "$hello_dir/"
++(cd "$hello_dir" && "$repo_root/bin/fand" hello --source-in src </dev/null) \
++  || { echo "build.sh: examples/hello does not build" >&2; rm -rf "$hello_dir"; exit 1; }
++rm -rf "$hello_dir"
