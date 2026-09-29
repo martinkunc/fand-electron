@@ -1,4 +1,4 @@
-# účto – PC FAND engine for Electron
+# PC FAND engine for Electron
 
 A cross-platform re-implementation of the PC FAND 4.2 runtime (the DOS RDBMS/4GL that
 Účto by Tichý & spol. is written in), with a React console that renders DOS text mode
